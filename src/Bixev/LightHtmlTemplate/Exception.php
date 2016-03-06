@@ -1,5 +1,5 @@
 <?php
-namespace Bixev\LightTemplate;
+namespace Bixev\LightHtmlTemplate;
 
 class Exception extends \Exception
 {

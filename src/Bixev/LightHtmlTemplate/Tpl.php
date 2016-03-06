@@ -85,14 +85,12 @@ class Tpl
             $prof = count(explode($this->bloc_limit, $bloc_path));
         }
         // initialize content
-        $return = [
-            'init' => true,
+        $this->blocs[$bloc_path] = [
+            'init' => 1,
             'prof' => $prof,
             'tpl'  => '',
             'html' => '',
         ];
-
-        return $return;
     }
 
     /**
@@ -278,7 +276,7 @@ class Tpl
             $parent_bloc_path = $this->getParentBlocPath($bloc_path);
             if (!isset($this->blocs[$parent_bloc_path])) {
                 throw new Exception("Parent bloc does not exist : " . $parent_bloc_path);
-            } elseif ($this->blocs[$parent_bloc_path]['init'] == 0) {
+            } elseif (!isset($this->blocs[$parent_bloc_path]['init']) || $this->blocs[$parent_bloc_path]['init'] == 0) {
                 throw new Exception("Parent bloc is not initialized : " . $parent_bloc_path);
             } else {
                 $parent_tpl = $this->blocs[$parent_bloc_path]['tpl'];
@@ -312,8 +310,7 @@ class Tpl
 
         // imports ?
         $bloc_tpl = $this->replaceImportedTemplate($bloc_tpl);
-        $bloc['tpl'] = $bloc_tpl;
-        $this->blocs[$bloc_path] = $bloc;
+        $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
     }
 
     public function initFromString($bloc_path, $content)
@@ -330,8 +327,7 @@ class Tpl
 
         // imports ?
         $bloc_tpl = $this->replaceImportedTemplate($bloc_tpl);
-        $bloc['tpl'] = $bloc_tpl;
-        $this->blocs[$bloc_path] = $bloc;
+        $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
     }
 
     /**
@@ -353,8 +349,7 @@ class Tpl
             $bloc_tpl = $this->getBlocFromTpl($bloc_name, $parent_tpl);
             // imports ?
             $bloc_tpl = $this->replaceImportedTemplate($bloc_tpl);
-            $bloc['tpl'] = $bloc_tpl;
-            $this->blocs[$bloc_path] = $bloc;
+            $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
         }
     }
 
@@ -365,6 +360,9 @@ class Tpl
      */
     public function pB($bloc_path = '', $vars = false)
     {
+        if (!is_string($bloc_path)) {
+            throw new Exception('Given bloc_path is not a string !');
+        }
         if (is_array($vars) && !$this->isAssociativeArray($vars)) {
             foreach ($vars as $vars1) {
                 $this->pB($bloc_path, $vars1);
@@ -388,7 +386,7 @@ class Tpl
     protected function doParse($bloc_path = '', $vars = false)
     {
         // if empty => master
-        $bloc_path = ($bloc_path == '') ? $this->bloc_limit : $bloc_path;
+        $bloc_path = empty($bloc_path) ? $this->bloc_limit : $bloc_path;
         if (!isset($this->blocs[$bloc_path])) {
             throw new Exception("Bloc does not exist : " . $bloc_path);
         }
@@ -436,6 +434,9 @@ class Tpl
         $html = $this->stripBlocs($html, $bloc_path);
         $html = $this->stripVars($html, $bloc_path);
 
+        if (!isset($this->blocs[$bloc_path]['html'])) {
+            $this->blocs[$bloc_path]['html'] = '';
+        }
         $this->blocs[$bloc_path]['html'] .= $html;
         $this->blocs[$bloc_path]['init'] = 2;
 
@@ -472,7 +473,7 @@ class Tpl
 
     protected function replaceImportedTemplate($html)
     {
-        $out = $this->getPregmatch($this->import_pattern, $html);
+        $out = $this->getPregmatchAll($this->import_pattern, $html);
         $nb = count($out[0]);
         if ($nb != 0) {
             for ($i = 0; $i < $nb; $i++) {
@@ -580,6 +581,9 @@ class Tpl
         $bloc_path = ($bloc_path == '') ? $this->bloc_limit : $bloc_path;
         if (!isset($this->blocs[$bloc_path])) {
             throw new Exception("Bloc does not exist : " . $bloc_path);
+        }
+        if (!isset($this->blocs[$bloc_path]['init'])) {
+            throw new Exception("Bloc has not been initialized : " . $bloc_path);
         }
         if ($this->blocs[$bloc_path]['init'] != 2) {
             throw new Exception("Bloc has not been parsed : " . $bloc_path);
