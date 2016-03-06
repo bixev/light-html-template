@@ -5,9 +5,9 @@ class Tpl
 {
 
     /**
-     * @var string path to the html templates
+     * @var array path to the html templates
      */
-    protected $tpl_location_dir;
+    protected $_directories = [];
 
     /**
      * @var string
@@ -54,19 +54,52 @@ class Tpl
         }
     }
 
+    public function setDirectories(array $directories)
+    {
+        $this->_directories = $directories;
+    }
+
     /**
      * @param string $path
      * @return string : absolute path
      */
     private function getPath($path)
     {
-        $dir = $this->tpl_location_dir . '/' . $path;
-
-        if (substr($dir, -5, 5) != '.html') {
-            $dir .= $this->extension;
+        if (strpos($path, '/') === 0) {
+            $filePath = $path;
+            if (substr($path, -5, 5) != '.html') {
+                $filePath .= $this->extension;
+            }
+            if (file_exists($filePath)) {
+                return $filePath;
+            }
+        }
+        foreach ($this->_directories as $directory) {
+            $filePath = $directory . '/' . $path;
+            if (substr($filePath, -5, 5) != '.html') {
+                $filePath .= $this->extension;
+            }
+            if (file_exists($filePath)) {
+                return $filePath;
+            }
         }
 
-        return $dir;
+        return null;
+    }
+
+    /**
+     * @param $path
+     * @return string
+     * @throws Exception
+     */
+    protected function getPathContent($path)
+    {
+        $path = $this->getPath($path);
+        if (!is_file($path) || ($content = file_get_contents($path)) === false) {
+            throw new Exception("File does not exist or is not readable : " . $path);
+        }
+
+        return $content;
     }
 
     /**
@@ -295,21 +328,17 @@ class Tpl
     {
         $this->initBloc($bloc_path);
 
-        $path = $this->getPath($filePath);
-        if (!is_file($path) || ($_tmp = file_get_contents($path)) === false) {
-            throw new Exception("File does not exist or is not readable : " . $path);
-        } else {
-            $bloc_tpl = $_tmp;
-            // empty child blocs
-            foreach ($this->blocs as $C => $V) {
-                if ($this->isChildOf($bloc_path, $C)) {
-                    unset($this->blocs[$C]);
-                }
+        $tplContent = $this->getPathContent($filePath);
+
+        // empty child blocs
+        foreach ($this->blocs as $C => $V) {
+            if ($this->isChildOf($bloc_path, $C)) {
+                unset($this->blocs[$C]);
             }
         }
 
         // imports ?
-        $bloc_tpl = $this->replaceImportedTemplate($bloc_tpl);
+        $bloc_tpl = $this->replaceImportedTemplate($tplContent);
         $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
     }
 
@@ -332,8 +361,6 @@ class Tpl
 
     /**
      * @param $bloc_path
-     * @param bool $from_file
-     * @param null $fromString
      * @throws Exception
      */
     public function iB($bloc_path)
@@ -358,8 +385,20 @@ class Tpl
      * @param bool $vars
      * @throws Exception
      */
-    public function pB($bloc_path = '', $vars = false)
+    public function pB()
     {
+        $bloc_path = '';
+        $vars = false;
+        $args = func_get_args();
+        for ($i = 0; $i < count($args); $i++) {
+            $arg = $args[$i];
+            if (is_string($arg)) {
+                $bloc_path = $arg;
+            } elseif (is_array($arg)) {
+                $vars = $arg;
+            }
+        }
+
         if (!is_string($bloc_path)) {
             throw new Exception('Given bloc_path is not a string !');
         }
@@ -422,7 +461,7 @@ class Tpl
                 if (!count($out)) {
                     $this->log("Child bloc '" . $child_bloc_name . "' not found, cannot be included into '" . $bloc_path . "'");
                 } else {
-                    $html_child = $this->display($child_path, true);
+                    $html_child = $this->render($child_path);
                     $html = str_replace($out[0], $out[1] . $html_child . $out[3], $html);
                 }
                 $this->blocs[$child_path]['html'] = '';
@@ -448,7 +487,6 @@ class Tpl
      *
      * @param $bloc_path
      * @param bool $vars
-     * @param array $container
      * @throws Exception
      */
     public function B($bloc_path, $vars = false)
@@ -477,7 +515,7 @@ class Tpl
         $nb = count($out[0]);
         if ($nb != 0) {
             for ($i = 0; $i < $nb; $i++) {
-                $imported = $this->getImportedTemplate($out[1][$i]);
+                $imported = $this->getPathContent($out[1][$i]);
                 $importedReplaced = $this->replaceImportedTemplate($imported);
                 $html = str_replace($out[0][$i], $importedReplaced, $html);
             }
@@ -560,23 +598,12 @@ class Tpl
         return $content1;
     }
 
-    protected function getImportedTemplate($path)
-    {
-        $path = $this->getPath($path);
-        if (!is_file($path) || ($_tmp = file_get_contents($path)) === false) {
-            throw new Exception("File does not exist or is not readable : " . $path);
-        } else {
-            return $_tmp;
-        }
-    }
-
     /**
      * @param string $bloc_path
-     * @param bool $return_str
-     * @return mixed
+     * @return string
      * @throws Exception
      */
-    public function display($bloc_path = '', $return_str = false)
+    public function render($bloc_path = '')
     {
         $bloc_path = ($bloc_path == '') ? $this->bloc_limit : $bloc_path;
         if (!isset($this->blocs[$bloc_path])) {
@@ -589,13 +616,8 @@ class Tpl
             throw new Exception("Bloc has not been parsed : " . $bloc_path);
         }
         $html = $this->blocs[$bloc_path]['html'];
-        if ($return_str) {
-            return $html;
-        } else {
-            echo $html;
 
-            return true;
-        }
+        return $html;
     }
 
     /**
