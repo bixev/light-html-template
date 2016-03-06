@@ -1,0 +1,13 @@
+{
+  "name": "bixev/light-html-template",
+  "description": "Bixev light HTML template system",
+  "license": "MIT",
+  "require": {
+    "php": ">=5.3"
+  },
+  "autoload": {
+    "psr-0": {
+      "Bixev\\LightHtmlTemplate\\": "src/"
+    }
+  }
+}
