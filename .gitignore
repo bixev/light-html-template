@@ -1,0 +1,6 @@
+/nbproject/private/
+/vendor
+/composer.lock
+/nbproject
+.idea/
+.DS_Store

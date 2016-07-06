@@ -5,11 +5,15 @@
   "type": "library",
   "require": {
     "php": ">=5.3",
-    "bixev/light-logger": ">=1.0.0"
+    "bixev/light-logger": ">=1.0.0",
+    "phpunit/phpunit": ">=3.7.0",
+    "phpunit/phpunit-story": ">=1.0.2",
+    "bixev/light-logger": "dev-master"
   },
   "autoload": {
     "psr-0": {
-      "Bixev\\LightHtmlTemplate\\": "src/"
+      "Bixev\\LightHtmlTemplate\\": "src/",
+      "BixevTest\\LightHtmlTemplateTest\\": "test/"
     }
   }
 }

@@ -4,10 +4,16 @@ namespace Bixev\LightHtmlTemplate;
 class Tpl
 {
 
+    use \Bixev\LightLogger\LoggerTrait;
+
     /**
      * @var array path to the html templates
      */
     protected $_directories = [];
+
+    protected $_isInit = false;
+    protected $_fromFile;
+    protected $_fromString;
 
     /**
      * @var string
@@ -20,38 +26,98 @@ class Tpl
     protected $bloc_limit = '.';
 
     /**
+     * Bloc pattern
+     *
+     * first parenthesis catches the bloc name
+     * second parenthesis catches the bloc content
+     * eg : {{ bloc : test }} block content {{ endbloc : test }}
      * @var string
      */
-    protected $bloc_pattern = "[a-zA-Z]+[a-zA-Z0-9_\-]*";
+    protected $bloc_pattern = '#
+                               {{
+                                   \s*
+                                   bloc\s*:\s*([a-zA-Z]+[a-zA-Z0-9_\-]*)
+                                   \s*
+                               }}
+                               (.*)
+                               {{
+                                   \s*
+                                   endbloc\s*:\s*\1
+                               \s*
+                               }}
+                               #ixsm';
 
     /**
+     * import pattern
+     *
+     * first parenthesis catches the callback function name
+     * eg : {{ import : test/test }}
      * @var string
      */
-    protected $var_pattern = "[a-zA-Z]+[a-zA-Z0-9_/\[\]\-]*";
+    protected $import_pattern = '#
+                                  {{
+                                      \s*
+                                      import\s*\:\s*([a-zA-Z]+[a-zA-Z0-9_\-]*)
+                                      \s*
+                                  }}
+                                 #ixsm';
 
     /**
+     * var pattern
+     *
+     * first parenthesis catches the var name
+     * third parenthesis catches the callback function name
+     * eg : {{ toto }}, {{ toto | function }}
      * @var string
      */
-    protected $import_pattern = "#\[IMPORT\|([\/a-zA-z0-9_\-]+)\]#ixsm";
-
+    protected $var_pattern = '#
+                              {{
+                                  \s*
+                                  ([a-zA-Z]+[a-zA-Z0-9_/\[\]\-]*)
+                                  (\s*\|\s*([a-zA-Z0-9_]+))?
+                                  \s*
+                              }}
+                              #ixsm';
 
     /**
      * @var array local cache
      */
     private $blocs = [];
 
+    protected $_functions = [];
+
     /**
      * @param string $file
      * @param string $string
+     * @param \Bixev\LightLogger\LoggerInterface $logger
      */
-    function __construct($file = null, $string = null)
+    function __construct($file = null, $string = null, \Bixev\LightLogger\LoggerInterface $logger = null)
     {
-        // defining master template
+        $this->setLogger($logger);
         if ($file !== null) {
-            $this->initFromFile($this->bloc_limit, $file);
+            $this->_fromFile = $file;
         } elseif ($string !== null) {
-            $this->initFromString($this->bloc_limit, $string);
+            $this->_fromString = $string;
         }
+
+        $this->_functions['default'] = function ($value, $valueGiven) {
+            return $valueGiven ? '' : $value;
+        };
+    }
+
+    protected function init()
+    {
+        if ($this->_isInit) {
+            return;
+        }
+        $this->blocs = [];
+        // defining master template
+        if ($this->_fromFile !== null) {
+            $this->initFromFile($this->bloc_limit, $this->_fromFile);
+        } elseif ($this->_fromString !== null) {
+            $this->initFromString($this->bloc_limit, $this->_fromString);
+        }
+        $this->_isInit = true;
     }
 
     public function setDirectories(array $directories)
@@ -65,7 +131,7 @@ class Tpl
      */
     private function getPath($path)
     {
-        if (strpos($path, '/') === 0) {
+        if (strpos($path, DIRECTORY_SEPARATOR) === 0) {
             $filePath = $path;
             if (substr($path, -5, 5) != '.html') {
                 $filePath .= $this->extension;
@@ -75,7 +141,7 @@ class Tpl
             }
         }
         foreach ($this->_directories as $directory) {
-            $filePath = $directory . '/' . $path;
+            $filePath = $directory . DIRECTORY_SEPARATOR . $path;
             if (substr($filePath, -5, 5) != '.html') {
                 $filePath .= $this->extension;
             }
@@ -84,7 +150,7 @@ class Tpl
             }
         }
 
-        return null;
+        throw new Exception("File does not exist : " . $path);
     }
 
     /**
@@ -95,8 +161,9 @@ class Tpl
     protected function getPathContent($path)
     {
         $path = $this->getPath($path);
-        if (!is_file($path) || ($content = file_get_contents($path)) === false) {
-            throw new Exception("File does not exist or is not readable : " . $path);
+        $content = file_get_contents($path);
+        if ($content === false) {
+            throw new Exception("File is not readable : " . $path);
         }
 
         return $content;
@@ -177,10 +244,9 @@ class Tpl
      */
     private function isBlocInTpl($bloc_name, $tpl)
     {
-        $_tmp = [];
-        $pattern = "#<bloc:" . $bloc_name . ">(.*)</bloc:" . $bloc_name . ">#ms";
+        preg_match_all($this->bloc_pattern, $tpl, $matches);
 
-        return preg_match($pattern, $tpl, $_tmp);
+        return in_array($bloc_name, $matches[1]);
     }
 
     /**
@@ -191,19 +257,22 @@ class Tpl
      */
     private function getBlocFromTpl($bloc_name, $tpl)
     {
-        $_tmp = [];
-        $pattern = "#<bloc:" . $bloc_name . ">(.*)</bloc:" . $bloc_name . ">#ms";
-        preg_match_all($pattern, $tpl, $_tmp);
+        preg_match_all($this->bloc_pattern, $tpl, $matches);
 
-        $nb = count($_tmp[0]);
-
-        if (!$nb) {
-            throw new Exception('Bloc not found : "' . $bloc_name . '"');
-        } elseif ($nb > 1) {
-            throw new Exception('Multiple blocs found with same name : "' . $bloc_name . '"');
-        } else {
-            return $_tmp[1][0];
+        $content = null;
+        for ($i = 0; $i < count($matches[0]); $i++) {
+            if ($matches[1][$i] == $bloc_name) {
+                if ($content !== null) {
+                    throw new Exception('Multiple blocs found with same name : "' . $bloc_name . '"');
+                }
+                $content = $matches[2][$i];
+            }
         }
+        if ($content === null) {
+            throw new Exception('Bloc not found : "' . $bloc_name . '"');
+        }
+
+        return $content;
     }
 
     /**
@@ -212,19 +281,22 @@ class Tpl
      * @return mixed|string
      * @throws Exception
      */
-    private function stripBlocs($tpl, $bloc_path = '')
+    private function stripBlocs($tpl)
     {
-        // get all not parsed blocs
-        preg_match_all("#<bloc:(" . $this->bloc_pattern . ")>#ixsm", $tpl, $todelete, PREG_PATTERN_ORDER);
-        foreach ($todelete[1] as $v) {
-            $pattern = '#\s*<bloc:' . $v . '>(.*)</bloc:' . $v . '>\s*#ixsm';
-            $count = 0;
-            $tpl1 = $this->pregReplace($pattern, " ", $tpl, $count);
+        return $this->pregReplace($this->bloc_pattern, '', $tpl);
+    }
 
-            if ($count != 0) {
-                $tpl = $tpl1;
-                $this->log("Bloc deleted '" . $v . "'. Parent bloc: " . $bloc_path);
-            }
+    /**
+     * @param $tpl
+     * @return mixed
+     */
+    private function processImports($tpl)
+    {
+        $out = $this->getPregmatchAll($this->import_pattern, $tpl);
+        for ($i = 0; $i < count($out[0]); $i++) {
+            $imported = $this->getPathContent($out[1][$i]);
+            $importedReplaced = $this->processImports($imported);
+            $tpl = str_replace($out[0][$i], $importedReplaced, $tpl);
         }
 
         return $tpl;
@@ -232,18 +304,11 @@ class Tpl
 
     /**
      * @param $tpl
-     * @param string $bloc_path
      * @return mixed
      */
-    private function stripVars($tpl, $bloc_path = '')
+    private function stripVars($tpl)
     {
-        preg_match_all("#{(" . $this->var_pattern . ")}#", $tpl, $todelete, PREG_PATTERN_ORDER);
-        foreach ($todelete[0] as $v) {
-            $this->log("var '" . $v . "' deleted. Parent bloc : " . $bloc_path);
-        }
-        $tpl = $this->pregReplace("#({(" . $this->var_pattern . ")})#", "", $tpl);
-
-        return $tpl;
+        return $this->pregReplace($this->var_pattern, '', $tpl);
     }
 
     /**
@@ -260,12 +325,15 @@ class Tpl
             $new_content = $vars;
         } elseif (is_array($vars)) {
             $new_content = $tpl;
-            foreach ($vars as $C => $V) {
-                if (!is_array($V)) {
-                    if (strpos($new_content, '{' . $C . '}') === false) {
-                        $this->log("var not found {" . $C . "}");
+            foreach ($vars as $name => $value) {
+                if (!is_array($value)) {
+                    preg_match_all($this->var_pattern, $tpl, $matches, PREG_PATTERN_ORDER);
+                    for ($i = 0; $i < count($matches[0]); $i++) {
+                        if ($matches[1][$i] == $name) {
+                            $value = $this->getVarValue($value, $matches[3][$i]);
+                            $new_content = str_replace($matches[0][$i], $value, $new_content);
+                        }
                     }
-                    $new_content = str_replace('{' . $C . '}', $V, $new_content);
                 }
             }
         } else {
@@ -273,6 +341,22 @@ class Tpl
         }
 
         return $new_content;
+    }
+
+    protected function getVarValue($value, $function = null, $valueGiven = false)
+    {
+        if (empty($function)) {
+            return $value;
+        }
+
+        if (isset($this->_functions[$function])) {
+            return $this->_functions[$function]($value, $valueGiven);
+        }
+        if (isset($this->_functions['default'])) {
+            return $this->_functions['default']($value, $valueGiven);
+        }
+
+        return $value;
     }
 
     /**
@@ -317,19 +401,20 @@ class Tpl
             // get current bloc
             $bloc_name = $this->getBlocNameFromPath($bloc_path);
             if (!$this->isBlocInTpl($bloc_name, $parent_tpl)) {
-                throw new Exception("Bloc not found : '" . $bloc_name . "' in parent bloc : '" . $parent_bloc_path . "'");
+                throw new Exception(
+                    "Bloc not found : '" . $bloc_name . "' in parent bloc : '" . $parent_bloc_path . "'"
+                );
             }
         }
 
         return [$bloc_name, $parent_tpl];
     }
 
-    public function initFromFile($bloc_path, $filePath)
+    protected function initFromFile($bloc_path, $filePath)
     {
         $this->initBloc($bloc_path);
 
         $tplContent = $this->getPathContent($filePath);
-
         // empty child blocs
         foreach ($this->blocs as $C => $V) {
             if ($this->isChildOf($bloc_path, $C)) {
@@ -337,16 +422,15 @@ class Tpl
             }
         }
 
-        // imports ?
-        $bloc_tpl = $this->replaceImportedTemplate($tplContent);
-        $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
+        $tplContent = $this->processImports($tplContent);
+
+        $this->blocs[$bloc_path]['tpl'] = $tplContent;
     }
 
-    public function initFromString($bloc_path, $content)
+    protected function initFromString($bloc_path, $tplContent)
     {
         $this->initBloc($bloc_path);
 
-        $bloc_tpl = $content;
         // empty child blocs
         foreach ($this->blocs as $C => $V) {
             if ($this->isChildOf($bloc_path, $C)) {
@@ -354,9 +438,9 @@ class Tpl
             }
         }
 
-        // imports ?
-        $bloc_tpl = $this->replaceImportedTemplate($bloc_tpl);
-        $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
+        $tplContent = $this->processImports($tplContent);
+
+        $this->blocs[$bloc_path]['tpl'] = $tplContent;
     }
 
     /**
@@ -365,6 +449,7 @@ class Tpl
      */
     public function iB($bloc_path)
     {
+        $this->init();
         $initParams = $this->initBloc($bloc_path);
 
         if ($bloc_path == $this->bloc_limit) {
@@ -373,10 +458,9 @@ class Tpl
         } else {
             $bloc_name = $initParams[0];
             $parent_tpl = $initParams[1];
-            $bloc_tpl = $this->getBlocFromTpl($bloc_name, $parent_tpl);
-            // imports ?
-            $bloc_tpl = $this->replaceImportedTemplate($bloc_tpl);
-            $this->blocs[$bloc_path]['tpl'] = $bloc_tpl;
+            $tplContent = $this->getBlocFromTpl($bloc_name, $parent_tpl);
+            $tplContent = $this->processImports($tplContent);
+            $this->blocs[$bloc_path]['tpl'] = $tplContent;
         }
     }
 
@@ -387,6 +471,8 @@ class Tpl
      */
     public function pB()
     {
+        $this->init();
+
         $bloc_path = '';
         $vars = false;
         $args = func_get_args();
@@ -402,7 +488,9 @@ class Tpl
         if (!is_string($bloc_path)) {
             throw new Exception('Given bloc_path is not a string !');
         }
-        if (is_array($vars) && !$this->isAssociativeArray($vars)) {
+        if (is_array($vars) && empty($vars)) {
+            $this->doParse($bloc_path, []);
+        } elseif (is_array($vars) && !$this->isAssociativeArray($vars)) {
             foreach ($vars as $vars1) {
                 $this->pB($bloc_path, $vars1);
             }
@@ -439,10 +527,15 @@ class Tpl
         }
         if (is_array($vars)) {
             foreach ($vars as $k => $v) {
-                if (is_array($v) && !empty($v)) {
+                if (is_array($v)) {
                     $subPath = $bloc_path != '.' ? $bloc_path . $this->bloc_limit . $k : $k;
-                    $this->iB($subPath);
-                    $this->pB($subPath, $v);
+                    if (!empty($v)) {
+                        $this->iB($subPath);
+                        $this->pB($subPath, $v);
+                    } else {
+                        $this->iB($subPath);
+                        $this->pB($subPath);
+                    }
                     unset($vars[$k]);
                 }
             }
@@ -451,18 +544,26 @@ class Tpl
         $html = $bloc['tpl'];
         // process children
         foreach ($this->blocs as $child_path => $bloc_content) {
-            if ($this->isChildOf($bloc_path, $child_path) && $this->blocs[$child_path]['prof'] == $this->blocs[$bloc_path]['prof'] + 1) {
+            if ($this->isChildOf(
+                    $bloc_path,
+                    $child_path
+                ) && $this->blocs[$child_path]['prof'] == $this->blocs[$bloc_path]['prof'] + 1
+            ) {
                 $child_bloc_name = $this->getBlocNameFromPath($child_path);
                 if (intval($this->blocs[$child_path]['init']) != 2) {
-                    $this->log("Child bloc initialized but not parsed : " . $child_bloc_name . " in parent bloc " . $parent_bloc_path);
+                    $this->log(
+                        "Child bloc initialized but not parsed : " . $child_bloc_name . " in parent bloc " . $parent_bloc_path
+                    );
                 }
-                $pattern = "#(\s*)<bloc:" . $child_bloc_name . ">(.*)</bloc:" . $child_bloc_name . ">(\s*)#ixsm";
-                $out = $this->getPregmatch($pattern, $html);
-                if (!count($out)) {
-                    $this->log("Child bloc '" . $child_bloc_name . "' not found, cannot be included into '" . $bloc_path . "'");
+                $out = $this->getPregmatch($this->bloc_pattern, $html);
+                $index = array_search($child_bloc_name, $out[1]);
+                if ($index === false) {
+                    $this->log(
+                        "Child bloc '" . $child_bloc_name . "' not found, cannot be included into '" . $bloc_path . "'"
+                    );
                 } else {
                     $html_child = $this->render($child_path);
-                    $html = str_replace($out[0], $out[1] . $html_child . $out[3], $html);
+                    $html = str_replace($out[0][$index], $html_child, $html);
                 }
                 $this->blocs[$child_path]['html'] = '';
             }
@@ -470,8 +571,8 @@ class Tpl
         $html = $this->parseBloc($html, $vars);
 
         // strips remaining blocs/vars not used
-        $html = $this->stripBlocs($html, $bloc_path);
-        $html = $this->stripVars($html, $bloc_path);
+        $html = $this->stripBlocs($html);
+        $html = $this->stripVars($html);
 
         if (!isset($this->blocs[$bloc_path]['html'])) {
             $this->blocs[$bloc_path]['html'] = '';
@@ -509,21 +610,6 @@ class Tpl
         return true;
     }
 
-    protected function replaceImportedTemplate($html)
-    {
-        $out = $this->getPregmatchAll($this->import_pattern, $html);
-        $nb = count($out[0]);
-        if ($nb != 0) {
-            for ($i = 0; $i < $nb; $i++) {
-                $imported = $this->getPathContent($out[1][$i]);
-                $importedReplaced = $this->replaceImportedTemplate($imported);
-                $html = str_replace($out[0][$i], $importedReplaced, $html);
-            }
-        }
-
-        return $html;
-    }
-
     /**
      * handle with pcre limitations into preg_match
      *
@@ -535,10 +621,10 @@ class Tpl
     protected function getPregmatch($pattern, $content)
     {
         $i = 0;
-        preg_match($pattern, $content, $out);
+        preg_match_all($pattern, $content, $out);
         while (preg_last_error() == PREG_BACKTRACK_LIMIT_ERROR) {
             ini_set('pcre.backtrack_limit', (int)ini_get('pcre.backtrack_limit') + 100000);
-            preg_match($pattern, $content, $out);
+            preg_match_all($pattern, $content, $out);
             $i++;
             if ($i > 100) {
                 throw new Exception("pcre.backtrack_limit increased to " . ((int)ini_get('pcre.backtrack_limit')));
@@ -618,113 +704,5 @@ class Tpl
         $html = $this->blocs[$bloc_path]['html'];
 
         return $html;
-    }
-
-    /**
-     * @param $tplContent
-     * @return array
-     */
-    public function getTemplateErrors($tplContent)
-    {
-
-        $errors = [];
-
-        if (preg_match("#<\?(?!xml)#ixm", $tplContent) != 0) {
-            $errors[] = "Script opening (<?)";
-        }
-
-        $tab_init = [];
-        preg_match_all("#<bloc:(" . $this->bloc_pattern . ")>#ixsm", $tplContent, $matches, PREG_PATTERN_ORDER);
-        foreach ($matches[1] as $v) {
-            if (array_search($v, $tab_init) !== false) {
-                $errors[] = "Bloc already exists <" . $v . ">";
-            } else {
-                $tab_init[] = $v;
-            }
-        }
-
-        preg_match_all("#<bloc:([^>.]*)>#ixsm", $tplContent, $matches, PREG_PATTERN_ORDER);
-        foreach ($matches[1] as $v) {
-            if (array_search($v, $tab_init) === false) {
-                $errors[] = "Wrong name for opened bloc <" . $v . ">";
-            }
-        }
-
-        $tab_close = [];
-        preg_match_all("#</bloc:(" . $this->bloc_pattern . ")>#ixsm", $tplContent, $matches, PREG_PATTERN_ORDER);
-        foreach ($matches[1] as $v) {
-            if (array_search($v, $tab_close) !== false) {
-                $errors[] = "Bloc is closed multiple times <" . $v . ">";
-            } else {
-                $tab_close[] = $v;
-            }
-            if (array_search($v, $tab_init) === false) {
-                $errors[] = "Bloc closed but not opened <" . $v . ">";
-            }
-        }
-
-        preg_match_all("#</bloc:([^>.]*)>#ixsm", $tplContent, $matches, PREG_PATTERN_ORDER);
-        foreach ($matches[1] as $v) {
-            if (array_search($v, $tab_close) === false) {
-                $errors[] = "Wrong name for closed bloc <" . $v . ">";
-            }
-        }
-        $tab_pos = [];
-        foreach ($tab_init as $v) {
-            if (array_search($v, $tab_close) === false) {
-                $errors[] = "Not closed bloc <" . $v . ">";
-            }
-            $open = strpos($tplContent, '<bloc:' . $v . '>');
-            $close = strpos($tplContent, '</bloc:' . $v . '>');
-            if ($open > $close) {
-                $errors[] = "Bloc closed before being opened <" . $v . ">";
-            }
-            $tab_pos[] = ['bloc' => $v, 'open' => $open, 'close' => $close];
-        }
-        $nb = count($tab_pos);
-        for ($i = 0; $i < $nb; $i++) {
-            $val = $tab_pos[$i];
-            for ($j = 0; $j < $nb; $j++) {
-                $val2 = $tab_pos[$j];
-                if (($val['open'] > $val2['open'] && $val['open'] < $val2['close'] && $val['close'] > $val2['close']) || ($val2['open'] > $val['open'] && $val2['open'] < $val['close'] && $val2['close'] > $val['close'])) {
-                    $errors[] = "Bloc inception error between " . $val['bloc'] . " and " . $val2['bloc'];
-                }
-            }
-        }
-
-        return $errors;
-    }
-
-    /**
-     * @param $path
-     * @param Tpl $tpl_temp
-     * @return array
-     */
-    public static function checkTemplateDirectory($path, Tpl $tpl_temp)
-    {
-        $nb = 0;
-        $errors = [];
-        if ($handle = opendir($path)) {
-            while (false !== ($file = readdir($handle))) {
-                if ($file != "." && $file != "..") {
-                    $path1 = $path . '/' . $file;
-                    if (is_dir($path1)) {
-                        $result = static::checkTemplateDirectory($path1, $tpl_temp);
-                        $nb += $result['count'];
-                        $errors = array_merge($errors, $result['errors']);
-                    } elseif (substr($path1, -5, 5) == '.html') {
-                        $content = file_get_contents($path1);
-                        $errors = $tpl_temp->getTemplateErrors($content);
-                    }
-                }
-            }
-        }
-
-        return ['count' => $nb, 'errors' => $errors];
-    }
-
-    protected function log($log)
-    {
-        firelog($log);
     }
 }
