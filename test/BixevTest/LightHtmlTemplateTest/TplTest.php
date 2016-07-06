@@ -1,7 +1,7 @@
 <?php
 //declare(strict_types = 1);
 
-namespace Bixev\LightHtmlTemplateTest;
+namespace BixevTest\LightHtmlTemplateTest;
 
 class TplTest extends \PHPUnit_Framework_TestCase
 {
