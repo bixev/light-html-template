@@ -57,7 +57,7 @@ class Tpl
     protected $import_pattern = '#
                                   {{
                                       \s*
-                                      import\s*\:\s*([a-zA-Z]+[a-zA-Z0-9_\-]*)
+                                      import\s*\:\s*([a-zA-Z]+[a-zA-Z0-9_\-\/]*)
                                       \s*
                                   }}
                                  #ixsm';
