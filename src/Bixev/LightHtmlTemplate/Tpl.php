@@ -125,6 +125,11 @@ class Tpl
         $this->_directories = $directories;
     }
 
+    public function setVarFunctions(array $functions)
+    {
+        $this->_functions = $functions;
+    }
+
     /**
      * @param string $path
      * @return string : absolute path
@@ -346,7 +351,7 @@ class Tpl
     protected function getVarValue($value, $function = null, $valueGiven = false)
     {
         if (empty($function)) {
-            return $value;
+            $function = 'default';
         }
 
         if (isset($this->_functions[$function])) {
