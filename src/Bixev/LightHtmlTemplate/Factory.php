@@ -6,12 +6,14 @@ class Factory
 
     static protected $_directories = [];
     static protected $_functions = [];
+    static protected $_ignoreNotFoundBlocs = false;
 
     static public function newTemplateFromString($string)
     {
         $tpl = new Tpl(null, $string);
         $tpl->setDirectories(static::$_directories);
         $tpl->setVarFunctions(static::$_functions);
+        $tpl->setIgnoreNotFoundBlocs(static::$_ignoreNotFoundBlocs);
 
         return $tpl;
     }
@@ -21,6 +23,7 @@ class Factory
         $tpl = new Tpl($path);
         $tpl->setDirectories(static::$_directories);
         $tpl->setVarFunctions(static::$_functions);
+        $tpl->setIgnoreNotFoundBlocs(static::$_ignoreNotFoundBlocs);
 
         return $tpl;
     }
@@ -42,5 +45,10 @@ class Factory
     static public function setVarFunction(string $label = 'default', callable $callable)
     {
         static::$_functions[$label] = $callable;
+    }
+
+    static public function setIgnoreNotFoundBlocs($ignore)
+    {
+        static::$_ignoreNotFoundBlocs = $ignore == true;
     }
 }

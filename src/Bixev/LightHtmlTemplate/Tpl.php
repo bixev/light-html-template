@@ -11,6 +11,11 @@ class Tpl
      */
     protected $_directories = [];
 
+    /**
+     * @var bool if set to true, no exception will be thrown when trying to parse a non-existing bloc
+     */
+    protected $_ignoreNotFoundBlocs = false;
+
     protected $_isInit = false;
     protected $_fromFile;
     protected $_fromString;
@@ -123,6 +128,11 @@ class Tpl
     public function setDirectories(array $directories)
     {
         $this->_directories = $directories;
+    }
+
+    public function setIgnoreNotFoundBlocs($ignore)
+    {
+        $this->_ignoreNotFoundBlocs = $ignore == true;
     }
 
     public function setVarFunctions(array $functions)
@@ -534,12 +544,18 @@ class Tpl
             foreach ($vars as $k => $v) {
                 if (is_array($v)) {
                     $subPath = $bloc_path != '.' ? $bloc_path . $this->bloc_limit . $k : $k;
-                    if (!empty($v)) {
-                        $this->iB($subPath);
-                        $this->pB($subPath, $v);
-                    } else {
-                        $this->iB($subPath);
-                        $this->pB($subPath);
+                    try {
+                        if (!empty($v)) {
+                            $this->iB($subPath);
+                            $this->pB($subPath, $v);
+                        } else {
+                            $this->iB($subPath);
+                            $this->pB($subPath);
+                        }
+                    } catch (\Exception $e) {
+                        if (!$this->_ignoreNotFoundBlocs) {
+                            throw $e;
+                        }
                     }
                     unset($vars[$k]);
                 }
