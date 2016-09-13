@@ -605,7 +605,6 @@ class Tpl
                     $html_child = $this->render($child_path);
                     $html = str_replace($out[0][$index], $html_child, $html);
                 }
-                //$this->blocs[$child_path]['html'] = '';
             }
         }
         $html = $this->parseBloc($html, $vars);
