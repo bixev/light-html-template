@@ -381,6 +381,12 @@ class Tpl
      */
     private function isChildOf($parent, $child)
     {
+        if (empty($child)) {
+            return false;
+        }
+        if (empty($parent)) {
+            $parent = $this->bloc_limit;
+        }
         if ($parent == $child) {
             return false;
         }
@@ -503,6 +509,17 @@ class Tpl
         if (!is_string($bloc_path)) {
             throw new Exception('Given bloc_path is not a string !');
         }
+
+        foreach ($this->blocs as $child_path => $bloc_content) {
+            if ($this->isChildOf(
+                    $bloc_path,
+                    $child_path
+                ) && $this->blocs[$child_path]['prof'] == $this->blocs[$bloc_path]['prof'] + 1
+            ) {
+                $this->blocs[$child_path]['html'] = '';
+            }
+        }
+
         if (is_array($vars) && empty($vars)) {
             $this->doParse($bloc_path, []);
         } elseif (is_array($vars) && !$this->isAssociativeArray($vars)) {
@@ -547,9 +564,11 @@ class Tpl
                     try {
                         if (!empty($v)) {
                             $this->iB($subPath);
+                            $this->blocs[$subPath]['html'] = '';
                             $this->pB($subPath, $v);
                         } else {
                             $this->iB($subPath);
+                            $this->blocs[$subPath]['html'] = '';
                             $this->pB($subPath);
                         }
                     } catch (\Exception $e) {
@@ -586,7 +605,7 @@ class Tpl
                     $html_child = $this->render($child_path);
                     $html = str_replace($out[0][$index], $html_child, $html);
                 }
-                $this->blocs[$child_path]['html'] = '';
+                //$this->blocs[$child_path]['html'] = '';
             }
         }
         $html = $this->parseBloc($html, $vars);
