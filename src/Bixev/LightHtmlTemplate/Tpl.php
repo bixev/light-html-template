@@ -345,8 +345,8 @@ class Tpl
                     preg_match_all($this->var_pattern, $tpl, $matches, PREG_PATTERN_ORDER);
                     for ($i = 0; $i < count($matches[0]); $i++) {
                         if ($matches[1][$i] == $name) {
-                            $value = $this->getVarValue($value, $matches[3][$i]);
-                            $new_content = str_replace($matches[0][$i], $value, $new_content);
+                            $value1 = $this->getVarValue($value, $matches[3][$i]);
+                            $new_content = str_replace($matches[0][$i], $value1, $new_content);
                         }
                     }
                 }
