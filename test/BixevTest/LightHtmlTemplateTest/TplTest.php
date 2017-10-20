@@ -3,7 +3,7 @@
 
 namespace BixevTest\LightHtmlTemplateTest;
 
-class TplTest extends \PHPUnit_Framework_TestCase
+class TplTest extends \PHPUnit\Framework\TestCase
 {
 
     public function testFromString()
