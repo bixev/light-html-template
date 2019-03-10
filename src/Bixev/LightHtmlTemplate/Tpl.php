@@ -730,6 +730,9 @@ class Tpl
      */
     public function render($bloc_path = '')
     {
+        if (!$this->_isInit) {
+            $this->pB();
+        }
         $bloc_path = ($bloc_path == '') ? $this->bloc_limit : $bloc_path;
         if (!isset($this->blocs[$bloc_path])) {
             throw new Exception("Bloc does not exist : " . $bloc_path);
