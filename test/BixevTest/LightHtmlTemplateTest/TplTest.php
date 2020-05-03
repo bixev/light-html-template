@@ -132,4 +132,18 @@ tutu4
 ";
         $this->assertEquals($expected, $result);
     }
+
+    public function testFunction()
+    {
+        \Bixev\LightHtmlTemplate\Factory::addDirectory(__DIR__ . DIRECTORY_SEPARATOR . 'html');
+        $tpl = \Bixev\LightHtmlTemplate\Factory::newTemplateFromFile('test5');
+        $tpl->setVarFunctions([
+            'functionTest'=>function($input){return '-'.$input.'-';}
+                              ]);
+        $tpl->pB();
+        $result = $tpl->render();
+        $expected = "tutu4 -test.toto- tutu6
+";
+        $this->assertEquals($expected, $result);
+    }
 }

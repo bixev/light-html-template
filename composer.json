@@ -5,8 +5,10 @@
   "type": "library",
   "require": {
     "php": ">=5.3",
-    "bixev/light-logger": ">=1.0.0",
     "bixev/light-logger": "dev-master"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "~8.0.4"
   },
   "autoload": {
     "psr-0": {

@@ -41,7 +41,7 @@ class Tpl
     protected $bloc_pattern = '#
                                {{
                                    \s*
-                                   bloc\s*:\s*([a-zA-Z]+[a-zA-Z0-9_\-]*)
+                                   bloc\s*:\s*([a-zA-Z]+[a-zA-Z0-9_\-\.]*)
                                    \s*
                                }}
                                (.*)
@@ -62,7 +62,7 @@ class Tpl
     protected $import_pattern = '#
                                   {{
                                       \s*
-                                      import\s*\:\s*([a-zA-Z]+[a-zA-Z0-9_\-\/]*)
+                                      import\s*\:\s*([a-zA-Z]+[a-zA-Z0-9_\-\/\.]*)
                                       \s*
                                   }}
                                  #ixsm';
@@ -78,16 +78,33 @@ class Tpl
     protected $var_pattern = '#
                               {{
                                   \s*
-                                  ([a-zA-Z]+[a-zA-Z0-9_/\[\]\-]*(?<!\s))
-                                  (\s*\|\s*([a-zA-Z0-9_]+))?
+                                  ([a-zA-Z]+[a-zA-Z0-9_/\[\]\-\.]*(?<!\s))
+                                  (\s*\|\s*([a-zA-Z0-9_\.]+))?
                                   \s*
                               }}
                               #ixsm';
 
     /**
+     * var pattern
+     *
+     * first parenthesis catches the var name
+     * third parenthesis catches the callback function name
+     * eg : {{ toto }}, {{ toto | function }}
+     * @var string
+     */
+    protected $function_pattern = '#
+                              \[\[
+                                  \s*
+                                  ([a-zA-Z]+[a-zA-Z0-9_/\[\]\-\.]*(?<!\s))
+                                  (\s*\|\s*([a-zA-Z0-9_\.]+))
+                                  \s*
+                              \]\]
+                              #ixsm';
+
+    /**
      * @var array local cache
      */
-    private $blocs = [];
+    protected $blocs = [];
 
     protected $_functions = [];
 
@@ -140,11 +157,16 @@ class Tpl
         $this->_functions = $functions;
     }
 
+    public function addVarFunctions($functionName, callable $function)
+    {
+        $this->_functions[$functionName] = $function;
+    }
+
     /**
      * @param string $path
      * @return string : absolute path
      */
-    private function getPath($path)
+    protected function getPath($path)
     {
         if (strpos($path, DIRECTORY_SEPARATOR) === 0) {
             $filePath = $path;
@@ -190,7 +212,7 @@ class Tpl
      * @param string $bloc_path : complete position of bloc parent.child
      * @return array $return
      */
-    private function createBloc($bloc_path)
+    protected function createBloc($bloc_path)
     {
         // master
         if ($bloc_path == $this->bloc_limit) {
@@ -214,7 +236,7 @@ class Tpl
      * @param string $bloc_path : complete position of bloc parent.child
      * @return string bloc name
      */
-    private function getBlocNameFromPath($bloc_path)
+    protected function getBlocNameFromPath($bloc_path)
     {
         // if master or level #1
         if ($bloc_path == $this->bloc_limit || strpos($bloc_path, $this->bloc_limit) === false) {
@@ -234,7 +256,7 @@ class Tpl
      * @param string $bloc_path : complete position of bloc parent.parent.child
      * @return string : complete position of bloc parent.parent
      */
-    private function getParentBlocPath($bloc_path)
+    protected function getParentBlocPath($bloc_path)
     {
         if ($bloc_path == $this->bloc_limit) {
             // bloc is master
@@ -257,7 +279,7 @@ class Tpl
      * @param string $tpl
      * @return bool
      */
-    private function isBlocInTpl($bloc_name, $tpl)
+    protected function isBlocInTpl($bloc_name, $tpl)
     {
         preg_match_all($this->bloc_pattern, $tpl, $matches);
 
@@ -270,7 +292,7 @@ class Tpl
      * @return mixed
      * @throws Exception
      */
-    private function getBlocFromTpl($bloc_name, $tpl)
+    protected function getBlocFromTpl($bloc_name, $tpl)
     {
         preg_match_all($this->bloc_pattern, $tpl, $matches);
 
@@ -296,7 +318,7 @@ class Tpl
      * @return mixed|string
      * @throws Exception
      */
-    private function stripBlocs($tpl)
+    protected function stripBlocs($tpl)
     {
         return $this->pregReplace($this->bloc_pattern, '', $tpl);
     }
@@ -305,7 +327,7 @@ class Tpl
      * @param $tpl
      * @return mixed
      */
-    private function processImports($tpl)
+    protected function processImports($tpl)
     {
         $out = $this->getPregmatchAll($this->import_pattern, $tpl);
         for ($i = 0; $i < count($out[0]); $i++) {
@@ -321,7 +343,7 @@ class Tpl
      * @param $tpl
      * @return mixed
      */
-    private function stripVars($tpl)
+    protected function stripVars($tpl)
     {
         return $this->pregReplace($this->var_pattern, '', $tpl);
     }
@@ -332,7 +354,7 @@ class Tpl
      * @return mixed|string
      * @throws Exception
      */
-    private function parseBloc($tpl, $vars = false)
+    protected function parseBloc($tpl, $vars = false)
     {
         if ($vars === false) {
             $new_content = $tpl;
@@ -354,6 +376,11 @@ class Tpl
         } else {
             throw new Exception('incorrect vars to parse : ' . print_r($vars, true));
         }
+        preg_match_all($this->function_pattern, $tpl, $matches, PREG_PATTERN_ORDER);
+        for ($i = 0; $i < count($matches[0]); $i++) {
+            $value1 = $this->applyFunction($matches[1][$i], $matches[3][$i]);
+            $new_content = str_replace($matches[0][$i], $value1, $new_content);
+        }
 
         return $new_content;
     }
@@ -374,12 +401,28 @@ class Tpl
         return $value;
     }
 
+    protected function applyFunction($value, $function = null, $valueGiven = false)
+    {
+        if (empty($function)) {
+            $function = 'default';
+        }
+
+        if (isset($this->_functions[$function])) {
+            return $this->_functions[$function]($value, $valueGiven);
+        }
+        if (isset($this->_functions['default'])) {
+            return $this->_functions['default']($value, $valueGiven);
+        }
+
+        return $value;
+    }
+
     /**
      * @param $parent
      * @param $child
      * @return bool
      */
-    private function isChildOf($parent, $child)
+    protected function isChildOf($parent, $child)
     {
         if (empty($child)) {
             return false;
