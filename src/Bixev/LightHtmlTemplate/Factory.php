@@ -42,7 +42,7 @@ class Factory
         static::$_directories = [];
     }
 
-    static public function setVarFunction(string $label = 'default', callable $callable)
+    static public function setVarFunction(string $label = 'default', callable $callable = null)
     {
         static::$_functions[$label] = $callable;
     }
